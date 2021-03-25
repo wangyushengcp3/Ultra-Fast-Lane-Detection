@@ -72,8 +72,8 @@ class RandomRotate(object):
 
         angle = random.randint(0, self.angle * 2) - self.angle
 
-        label = label.rotate(angle, resample=Image.NEAREST)
-        image = image.rotate(angle, resample=Image.BILINEAR)
+        label = label.rotate(angle, resample=Image.NEAREST)#输出图像与输入图像尺寸一样大
+        image = image.rotate(angle, resample=Image.BILINEAR)#输出图像与输入图像尺寸一样大
 
         return image, label
 

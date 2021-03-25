@@ -1,6 +1,48 @@
 import torch,pdb
 import torchvision
 import torch.nn.modules
+import math
+
+
+class InvertedResidual(torch.nn.Module):
+    def __init__(self, inp, oup, stride, expand_ratio):
+        super(InvertedResidual, self).__init__()
+        self.stride = stride
+        assert stride in [1, 2]
+
+        hidden_dim = int(inp * expand_ratio)
+        self.use_res_connect = self.stride == 1 and inp == oup
+
+        if expand_ratio == 1:
+            self.conv = torch.nn.Sequential(
+                # dw
+                torch.nn.Conv2d(hidden_dim, hidden_dim, 3, stride, 1, groups=hidden_dim, bias=False),
+                torch.nn.BatchNorm2d(hidden_dim),
+                torch.nn.ReLU6(inplace=True),
+                # pw-linear
+                torch.nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                torch.nn.BatchNorm2d(oup),
+            )
+        else:
+            self.conv = torch.nn.Sequential(
+                # pw
+                torch.nn.Conv2d(inp, hidden_dim, 1, 1, 0, bias=False),
+                torch.nn.BatchNorm2d(hidden_dim),
+                torch.nn.ReLU6(inplace=True),
+                # dw
+                torch.nn.Conv2d(hidden_dim, hidden_dim, 3, stride, 1, groups=hidden_dim, bias=False),
+                torch.nn.BatchNorm2d(hidden_dim),
+                torch.nn.ReLU6(inplace=True),
+                # pw-linear
+                torch.nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+                torch.nn.BatchNorm2d(oup),
+            )
+
+    def forward(self, x):
+        if self.use_res_connect:
+            return x + self.conv(x)
+        else:
+            return self.conv(x)
 
 class vgg16bn(torch.nn.Module):
     def __init__(self,pretrained = False):

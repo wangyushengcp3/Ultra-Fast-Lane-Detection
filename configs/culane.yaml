@@ -1,0 +1,50 @@
+dataset:
+  name: CULane
+  data_root: '/opt/sda5/BL01_Data/Lane_Data/CULane'
+  num_lanes: 4
+  w: 512
+  h: 256
+  input_size: [256, 512]
+  batch_size: 128
+  griding_num: 200
+  use_aux: True
+  # row_anchor: [121, 131, 141, 150, 160, 170, 180, 189, 199, 209, 219, 228, 238, 248, 258, 267, 277, 287] # 288
+  row_anchor: [108, 116, 125, 134, 142, 151, 160, 168, 177, 186, 194, 203, 212, 220, 229, 238, 246, 255] #256
+  num_per_lane: 18
+  num_workers: 8
+
+train:
+  epoch: 100
+  optimizer: 'SGD'  #['SGD','Adam']
+  learning_rate: 0.1
+  weight_decay: 1.0e-4
+  momentum: 0.9
+
+  scheduler: 'multi' #['multi', 'cos']
+  steps: [25,38]
+  gamma: 0.1
+  warmup: 'linear'
+  warmup_iters: 2
+  
+
+network:
+  backbone: 'mobilenetv2'
+  pretrained: NULL
+  out_channel: [32, 96, 320] #[128,256,1024]
+
+sim_loss_w: 0.0
+shp_loss_w: 0.0
+
+test:
+  test_model: 'weights/20210322_094501_lr_0.1/ep016.pth'
+  test_work_dir: 'weights'
+  val_intervals: 1
+# EXP
+note: ''
+log_path: 'runs'
+view: True
+# FINETUNE or RESUME MODEL PATH
+finetune: NULL
+resume: NULL
+
+

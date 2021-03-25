@@ -2,6 +2,48 @@ import os, argparse
 from utils.dist_utils import is_main_process, dist_print, DistSummaryWriter
 from utils.config import Config
 import torch
+import logging
+from termcolor import colored
+from evaluation.eval_wrapper import eval_lane as el
+class Logger:
+    def __init__(self, local_rank, save_dir='./', use_tensorboard=True):
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+            
+        self.rank = local_rank
+        fmt = colored('[%(name)s]', 'magenta', attrs=['bold']) + colored('[%(asctime)s]', 'blue') + \
+              colored('%(levelname)s:', 'green') + colored('%(message)s', 'white')
+        logging.basicConfig(level=logging.INFO,
+                            filename=os.path.join(save_dir, 'logs.log'),
+                            datefmt='%A, %d %B %Y %H:%M:%S',  # 指定日期时间格式
+                            format='%(asctime)s[line:%(lineno)d] %(levelname)s %(message)s',
+                            filemode='w')
+        self.log_dir = os.path.join(save_dir, 'logs')
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
+        formatter = logging.Formatter(fmt, datefmt="%m-%d %H:%M:%S")
+        console.setFormatter(formatter)
+        logging.getLogger().addHandler(console)
+        if use_tensorboard:
+            try:
+                from torch.utils.tensorboard import SummaryWriter
+            except ImportError:
+                raise ImportError(
+                    'Please run "pip install future tensorboard" to install '
+                    'the dependencies to use torch.utils.tensorboard '
+                    '(applicable to PyTorch 1.1 or higher)')
+            if self.rank < 1:
+                logging.info('Using Tensorboard, logs will be saved in {}'.format(self.log_dir))
+                self.writer = SummaryWriter(log_dir=self.log_dir)
+
+    def log(self, string):
+        if self.rank < 1:
+            logging.info(string)
+
+    def scalar_summary(self, tag, phase, value, step):
+        if self.rank < 1:
+            self.writer.add_scalars(tag, {phase: value}, step)
+
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -45,6 +87,10 @@ def get_args():
     parser.add_argument('--num_lanes', default = None, type = int)
     return parser
 
+
+def set_logging(rank=-1):
+    logging.basicConfig(format="%(message)s", level=logging.INFO if rank in [-1, 0] else logging.WARN)
+
 def merge_config():
     args = get_args().parse_args()
     cfg = Config.fromfile(args.config)
@@ -60,14 +106,16 @@ def merge_config():
     return args, cfg
 
 
-def save_model(net, optimizer, epoch,save_path, distributed):
-    if is_main_process():
-        model_state_dict = net.state_dict()
-        state = {'model': model_state_dict, 'optimizer': optimizer.state_dict()}
-        # state = {'model': model_state_dict}
-        assert os.path.exists(save_path)
-        model_path = os.path.join(save_path, 'ep%03d.pth' % epoch)
-        torch.save(state, model_path)
+def save_model(model, optimizer, epoch, path='model_last.pth'):
+    model_state_dict = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
+
+    state = {'model': model_state_dict, 'optimizer': optimizer.state_dict(), 'epoch': epoch}
+    # state = {'model': model_state_dict}
+    #assert os.path.exists(save_path)
+    torch.save(state, path)
+
+def eval_lane(net, dataset, data_root, test_work_dir, griding_num):
+    el(net, dataset, data_root, test_work_dir, griding_num, True)
 
 import pathspec
 
@@ -93,15 +141,14 @@ def cp_projects(to_path):
 import datetime, os
 def get_work_dir(cfg):
     now = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    hyper_param_str = '_lr_%1.0e_b_%d' % (cfg.learning_rate, cfg.batch_size)
-    work_dir = os.path.join(cfg.log_path, now + hyper_param_str + cfg.note)
+    hyper_param_str = '_lr_{}'.format(cfg['train']['learning_rate'])
+    work_dir = os.path.join(cfg['log_path'], now + hyper_param_str)
     return work_dir
 
-def get_logger(work_dir, cfg):
-    logger = DistSummaryWriter(work_dir)
-    config_txt = os.path.join(work_dir, 'cfg.txt')
-    if is_main_process():
-        with open(config_txt, 'w') as fp:
-            fp.write(str(cfg))
-
-    return logger
+# def get_logger(work_dir, cfg):
+#     logger = DistSummaryWriter(work_dir)
+#     config_txt = os.path.join(work_dir, 'cfg.txt')
+#     if is_main_process():
+#         with open(config_txt, 'w') as fp:
+#             fp.write(str(cfg))
+#     return logger

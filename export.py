@@ -1,47 +1,60 @@
 import torch, os, cv2
 from model.model import parsingNet
-from utils.common import merge_config
-from utils.dist_utils import dist_print
 import torch
 import scipy.special, tqdm
 import numpy as np
-import torchvision.transforms as transforms
-from data.dataset import LaneTestDataset
-from data.constant import culane_row_anchor, tusimple_row_anchor
-from PIL import Image
+import argparse
+import yaml
+def get_args():
+    parser = argparse.ArgumentParser()
 
-# Export to TorchScript that can be used for LibTorch
+    parser.add_argument('--params', default = 'configs/culane.yaml', type = str)
+    parser.add_argument('--batch_size', default = 1, type = int)
+    parser.add_argument('--weights', default = 'weights/20210309_141417_lr_0.1/ep014.pth', type = str)
+    parser.add_argument('--img-size', nargs='+', type=int, default=[256, 512], help='image size')  # height, width
+    return parser
 
-torch.backends.cudnn.benchmark = True
+if __name__ == '__main__':
+    args = get_args().parse_args()
+    args.img_size *= 2 if len(args.img_size) == 1 else 1  # expand
 
-# From cuLANE, Change this line if you are using TuSimple
-cls_num_per_lane = 18
-griding_num = 200
-backbone =18
+    with open(args.params) as f:
+        cfg = yaml.load(f, Loader=yaml.FullLoader)  # data dict
 
-net = parsingNet(pretrained = False,backbone='18', cls_dim = (griding_num+1,cls_num_per_lane,4),
-                use_aux=False)
+    net = parsingNet(network=cfg['network'],datasets=cfg['dataset']).cuda()
 
-# Change test_model where your model stored.
-test_model = '/data/Models/UltraFastLaneDetection/culane_18.pth'
+    state_dict = torch.load(args.weights, map_location='cpu')['model']
+    compatible_state_dict = {}
+    for k, v in state_dict.items():
+        if 'module.' in k:
+            compatible_state_dict[k[7:]] = v
+        else:
+            compatible_state_dict[k] = v
 
-#state_dict = torch.load(test_model, map_location='cpu')['model'] # CPU
-state_dict = torch.load(test_model, map_location='cuda')['model'] # CUDA
-compatible_state_dict = {}
-for k, v in state_dict.items():
-    if 'module.' in k:
-        compatible_state_dict[k[7:]] = v
-    else:
-        compatible_state_dict[k] = v
+    net.load_state_dict(compatible_state_dict, strict=False)
+    net.eval()
+    print('val done!!!')
 
-net.load_state_dict(compatible_state_dict, strict=False)
-net.eval()
+    img = torch.zeros(args.batch_size, 3, *args.img_size)  # image size(1,3,320,192) iDetection
+    img = img.cuda()
+    with torch.no_grad():
+        out = net(img)
+    # ONNX export
+    try:
+        import onnx
+        from onnxsim import simplify
 
-# Test Input Image
-img = torch.zeros(1, 3, 288, 800)  # image size(1,3,320,192) iDetection
-y = net(img)  # dry run
+        print('\nStarting ONNX export with onnx %s...' % onnx.__version__)
+        f = args.weights.replace('.pth', '.onnx')  # filename
+        torch.onnx.export(net, img, f, verbose=False, opset_version=11, input_names=['images'],
+                          output_names=['output'])
 
-ts = torch.jit.trace(net, img)
-
-#ts.save('UFLD.torchscript-cpu.pt') # CPU
-ts.save('UFLD.torchscript-cuda.pt') # CUDA
+        # Checks
+        onnx_model = onnx.load(f)  # load onnx model
+        model_simp, check = simplify(onnx_model)
+        assert check, "Simplified ONNX model could not be validated"
+        onnx.save(model_simp, f)
+        print(onnx.helper.printable_graph(onnx_model.graph))  # print a human readable model
+        print('ONNX export success, saved as %s' % f)
+    except Exception as e:
+        print('ONNX export failure: %s' % e)

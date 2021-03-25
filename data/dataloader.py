@@ -6,17 +6,17 @@ import data.mytransforms as mytransforms
 from data.constant import tusimple_row_anchor, culane_row_anchor
 from data.dataset import LaneClsDataset, LaneTestDataset
 
-def get_train_loader(batch_size, data_root, griding_num, dataset, use_aux, distributed, num_lanes):
+def get_train_loader(dataset_dict, local_rank):
     target_transform = transforms.Compose([
-        mytransforms.FreeScaleMask((288, 800)),
+        mytransforms.FreeScaleMask((dataset_dict['h'], dataset_dict['w'])),
         mytransforms.MaskToTensor(),
     ])
     segment_transform = transforms.Compose([
-        mytransforms.FreeScaleMask((36, 100)),
+        mytransforms.FreeScaleMask((dataset_dict['h'] // 8, dataset_dict['w'] // 8)),#36 100
         mytransforms.MaskToTensor(),
     ])
     img_transform = transforms.Compose([
-        transforms.Resize((288, 800)),
+        transforms.Resize((dataset_dict['h'], dataset_dict['w'])),
         transforms.ToTensor(),
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
@@ -25,57 +25,54 @@ def get_train_loader(batch_size, data_root, griding_num, dataset, use_aux, distr
         mytransforms.RandomUDoffsetLABEL(100),
         mytransforms.RandomLROffsetLABEL(200)
     ])
-    if dataset == 'CULane':
-        train_dataset = LaneClsDataset(data_root,
-                                           os.path.join(data_root, 'list/train_gt.txt'),
+    if dataset_dict['name'] == 'CULane':
+        train_dataset = LaneClsDataset(dataset_dict, img_transform=img_transform, target_transform=target_transform,
+                                           simu_transform = simu_transform, segment_transform=segment_transform)
+    elif dataset_dict['name'] == 'Tusimple':
+        train_dataset = LaneClsDataset(dataset_dict['data_root'],
+                                           os.path.join(dataset_dict['data_root'], 'train_gt.txt'),
                                            img_transform=img_transform, target_transform=target_transform,
                                            simu_transform = simu_transform,
-                                           segment_transform=segment_transform, 
-                                           row_anchor = culane_row_anchor,
-                                           griding_num=griding_num, use_aux=use_aux, num_lanes = num_lanes)
-        cls_num_per_lane = 18
-
-    elif dataset == 'Tusimple':
-        train_dataset = LaneClsDataset(data_root,
-                                           os.path.join(data_root, 'train_gt.txt'),
-                                           img_transform=img_transform, target_transform=target_transform,
-                                           simu_transform = simu_transform,
-                                           griding_num=griding_num, 
-                                           row_anchor = tusimple_row_anchor,
-                                           segment_transform=segment_transform,use_aux=use_aux, num_lanes = num_lanes)
-        cls_num_per_lane = 56
+                                           griding_num=dataset_dict['griding_num'], 
+                                           row_anchor = dataset_dict['row_anchor'],
+                                           segment_transform=segment_transform,use_aux=dataset_dict['use_aux'], num_lanes = dataset_dict['num_lanes'])
     else:
         raise NotImplementedError
 
-    if distributed:
-        sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+    if local_rank == -1:
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=dataset_dict['batch_size'], 
+                                                    shuffle=True, num_workers=dataset_dict['num_workers'])
     else:
-        sampler = torch.utils.data.RandomSampler(train_dataset)
+        num_gpus = torch.cuda.device_count()
+        torch.cuda.set_device(local_rank % num_gpus)
+        torch.distributed.init_process_group(backend='nccl')
+        sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=dataset_dict['batch_size'], sampler=sampler, num_workers=dataset_dict['num_workers'])
+    return train_loader
 
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, sampler = sampler, num_workers=4)
-
-    return train_loader, cls_num_per_lane
-
-def get_test_loader(batch_size, data_root,dataset, distributed):
+def get_test_loader(dataset_dict, local_rank):
     img_transforms = transforms.Compose([
-        transforms.Resize((288, 800)),
+        transforms.Resize((dataset_dict['h'], dataset_dict['w'])),
         transforms.ToTensor(),
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
-    if dataset == 'CULane':
-        test_dataset = LaneTestDataset(data_root,os.path.join(data_root, 'list/test.txt'),img_transform = img_transforms)
+    if dataset_dict['name'] == 'CULane':
+        test_dataset = LaneTestDataset(dataset_dict['data_root'],os.path.join(dataset_dict['data_root'], 'list/test.txt'),img_transform = img_transforms)
         cls_num_per_lane = 18
-    elif dataset == 'Tusimple':
-        test_dataset = LaneTestDataset(data_root,os.path.join(data_root, 'test.txt'), img_transform = img_transforms)
+    elif dataset_dict['name'] == 'Tusimple':
+        test_dataset = LaneTestDataset(dataset_dict['data_root'],os.path.join(dataset_dict['data_root'], 'test.txt'), img_transform = img_transforms)
         cls_num_per_lane = 56
 
-    if distributed:
-        sampler = SeqDistributedSampler(test_dataset, shuffle = False)
+    if local_rank == -1:
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=dataset_dict['batch_size'], 
+                                                    shuffle=False, num_workers=dataset_dict['num_workers'])
     else:
-        sampler = torch.utils.data.SequentialSampler(test_dataset)
-    loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, sampler = sampler, num_workers=4)
-    return loader
-
+        num_gpus = torch.cuda.device_count()
+        torch.cuda.set_device(local_rank % num_gpus)
+        torch.distributed.init_process_group(backend='nccl')
+        sampler = torch.utils.data.distributed.DistributedSampler(test_dataset)
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=dataset_dict['batch_size'], sampler=sampler, num_workers=dataset_dict['num_workers'])
+    return test_loader
 
 class SeqDistributedSampler(torch.utils.data.distributed.DistributedSampler):
     '''

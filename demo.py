@@ -69,17 +69,28 @@ if __name__ == "__main__":
             col_sample = np.linspace(0, 800 - 1, cfg.griding_num)
             col_sample_w = col_sample[1] - col_sample[0]
 
-
             out_j = out[0].data.cpu().numpy()
             out_j = out_j[:, ::-1, :]
             prob = scipy.special.softmax(out_j[:-1, :, :], axis=0)
+            ###
+            # a = [0,1,2,3,4,5,6,7,8,9]
+            # b = a[i:j] 表示复制a[i]到a[j-1]，以生成新的list对象
+            # b = a[1:3] 那么，b的内容是 [1,2]
+            # 当i缺省时，默认为0，即 a[:3]相当于 a[0:3]
+            # 当j缺省时，默认为len(alist), 即a[1:]相当于a[1:10]
+            # 当i,j都缺省时，a[:]就相当于完整复制一份a了
+
+            # b = a[i:j:s]这种格式呢，i,j与上面的一样，但s表示步进，缺省为1.
+            # 所以a[i:j:1]相当于a[i:j]
+            # 当s<0时，i缺省时，默认为-1. j缺省时，默认为-len(a)-1
+            # 所以a[::-1]相当于 a[-1:-len(a)-1:-1]，也就是从最后一个元素到第一个元素复制一遍。所以你看到一个倒序的东东。
+            ###
             idx = np.arange(cfg.griding_num) + 1
             idx = idx.reshape(-1, 1, 1)
             loc = np.sum(prob * idx, axis=0)
-            out_j = np.argmax(out_j, axis=0)
+            out_j = np.argmax(out_j, axis=0)#取出out_j中元素最大值所对应的索引
             loc[out_j == cfg.griding_num] = 0
             out_j = loc
-
             # import pdb; pdb.set_trace()
             vis = cv2.imread(os.path.join(cfg.data_root,names[0]))
             for i in range(out_j.shape[1]):
@@ -89,5 +100,4 @@ if __name__ == "__main__":
                             ppp = (int(out_j[k, i] * col_sample_w * img_w / 800) - 1, int(img_h * (row_anchor[cls_num_per_lane-1-k]/288)) - 1 )
                             cv2.circle(vis,ppp,5,(0,255,0),-1)
             vout.write(vis)
-        
         vout.release()

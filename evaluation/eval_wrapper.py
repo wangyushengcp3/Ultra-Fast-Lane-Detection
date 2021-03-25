@@ -1,4 +1,3 @@
-
 from data.dataloader import get_test_loader
 from evaluation.tusimple.lane import LaneEval
 from utils.dist_utils import is_main_process, dist_print, get_rank, get_world_size, dist_tqdm, synchronize
@@ -7,7 +6,6 @@ import numpy as np
 import platform
 
 def generate_lines(out, shape, names, output_path, griding_num, localization_type='abs', flip_updown=False):
-
     col_sample = np.linspace(0, shape[1] - 1, griding_num)
     col_sample_w = col_sample[1] - col_sample[0]
 
@@ -41,7 +39,7 @@ def generate_lines(out, shape, names, output_path, griding_num, localization_typ
                     for k in range(out_j.shape[0]):
                         if out_j[k, i] > 0:
                             fp.write(
-                                '%d %d ' % (int(out_j[k, i] * col_sample_w * 1640 / 800) - 1, int(590 - k * 20) - 1))
+                                '%d %d ' % (int(out_j[k, i] * col_sample_w * 1640 / 512) - 1, int(590 - k * 20) - 1))
                     fp.write('\n')
 
 def run_test(net, data_root, exp_name, work_dir, griding_num, use_aux,distributed, batch_size=8):
@@ -61,18 +59,17 @@ def run_test(net, data_root, exp_name, work_dir, griding_num, use_aux,distribute
             out, seg_out = out
 
         generate_lines(out,imgs[0,0].shape,names,output_path,griding_num,localization_type = 'rel',flip_updown = True)
+
 def generate_tusimple_lines(out,shape,griding_num,localization_type='rel'):
 
     out = out.data.cpu().numpy()
     out_loc = np.argmax(out,axis=0)
-
     if localization_type == 'rel':
         prob = scipy.special.softmax(out[:-1, :, :], axis=0)
         idx = np.arange(griding_num)
         idx = idx.reshape(-1, 1, 1)
 
         loc = np.sum(prob * idx, axis=0)
-
         loc[out_loc == griding_num] = griding_num
         out_loc = loc
     lanes = []
@@ -127,7 +124,6 @@ def combine_tusimple_test(work_dir,exp_name):
     output_path = os.path.join(work_dir,exp_name+'.txt')
     with open(output_path, 'w') as fp:
         fp.writelines(all_res_no_dup)
-    
 
 def eval_lane(net, dataset, data_root, work_dir, griding_num, use_aux, distributed):
     net.eval()
@@ -162,7 +158,6 @@ def eval_lane(net, dataset, data_root, work_dir, griding_num, use_aux, distribut
                 dist_print(r['name'], r['value'])
         synchronize()
 
-
 def read_helper(path):
     lines = open(path, 'r').readlines()[1:]
     lines = ' '.join(lines)
@@ -175,8 +170,8 @@ def read_helper(path):
 def call_culane_eval(data_dir, exp_name,output_path):
     if data_dir[-1] != '/':
         data_dir = data_dir + '/'
-    detect_dir=os.path.join(output_path,exp_name)+'/'
 
+    detect_dir=os.path.join(output_path,exp_name)+'/'
     w_lane=30
     iou=0.5;  # Set iou to 0.3 or 0.5
     im_w=1640
@@ -191,8 +186,10 @@ def call_culane_eval(data_dir, exp_name,output_path):
     list6 = os.path.join(data_dir,'list/test_split/test6_curve.txt')
     list7 = os.path.join(data_dir,'list/test_split/test7_cross.txt')
     list8 = os.path.join(data_dir,'list/test_split/test8_night.txt')
+
     if not os.path.exists(os.path.join(output_path,'txt')):
         os.mkdir(os.path.join(output_path,'txt'))
+
     out0 = os.path.join(output_path,'txt','out0_normal.txt')
     out1=os.path.join(output_path,'txt','out1_crowd.txt')
     out2=os.path.join(output_path,'txt','out2_hlight.txt')
@@ -202,7 +199,6 @@ def call_culane_eval(data_dir, exp_name,output_path):
     out6=os.path.join(output_path,'txt','out6_curve.txt')
     out7=os.path.join(output_path,'txt','out7_cross.txt')
     out8=os.path.join(output_path,'txt','out8_night.txt')
-
     eval_cmd = './evaluation/culane/evaluate'
     if platform.system() == 'Windows':
         eval_cmd = eval_cmd.replace('/', os.sep)
