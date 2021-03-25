@@ -27,30 +27,10 @@ First of all, please modify `data_root` and `log_path` in your `configs/culane.p
 
 ***
 
-For single gpu training, run
+For gpu training, run
 ```Shell
-python train.py configs/path_to_your_config
+python -train.py --params configs/culane.yaml
 ```
-For multi-gpu training, run
-```Shell
-sh launch_training.sh
-```
-or
-```Shell
-python -m torch.distributed.launch --nproc_per_node=$NGPUS train.py configs/path_to_your_config
-```
-If there is no pretrained torchvision model, multi-gpu training may result in multiple downloading. You can first download the corresponding models manually, and then restart the multi-gpu training.
-
-Since our code has auto backup function which will copy all codes to the `log_path` according to the gitignore, additional temp file might also be copied if it is not filtered by gitignore, which may block the execution if the temp files are large. So you should keep the working directory clean.
-***
-
-Besides config style settings, we also support command line style one. You can override a setting like
-```Shell
-python train.py configs/path_to_your_config --batch_size 8
-```
-The ```batch_size``` will be set to 8 during training.
-
-***
 
 To visualize the log with tensorboard, run
 
