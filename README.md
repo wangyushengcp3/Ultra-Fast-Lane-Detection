@@ -27,15 +27,7 @@ First of all, please modify `data_root` and `log_path` in your `configs/culane.p
 
 ***
 
-For single gpu training, run
-```Shell
-python train.py configs/path_to_your_config
-```
-For multi-gpu training, run
-```Shell
-sh launch_training.sh
-```
-or
+For gpu training, run
 ```Shell
 python -train.py --params configs/culane.yaml
 ```
