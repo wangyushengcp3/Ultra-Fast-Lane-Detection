@@ -117,7 +117,7 @@ def test(net, data_loader, dataset, work_dir, logger, use_aux=True):
         R = TP * 1.0/(TP + FN)
         F = 2*P*R/(P + R)
         logger.log('F:{}'.format(F))
-
+        return F
 if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
     args = parse_args()
@@ -169,8 +169,12 @@ if __name__ == "__main__":
     metric_dict = get_metric_dict(cfg['dataset'])
     loss_dict = get_loss_dict(cfg)
     
+    max_F = 0
     for epoch in range(resume_epoch, cfg['train']['epoch']):
         train(net, train_loader, loss_dict, optimizer, scheduler,logger, epoch, metric_dict, cfg['dataset']['use_aux'], args.local_rank)
         save_model(net, optimizer, epoch)
         if cfg['test']['val_intervals'] > 0 and epoch % cfg['test']['val_intervals'] == 0:
-            test(net, test_loader, cfg['dataset'], cfg['log_path'], logger)
+            F = test(net, test_loader, cfg['dataset'], cfg['log_path'], logger)
+            if F > max_F:
+                save_model(net, optimizer, epoch, 'model_best.pth')
+                max_F = F
